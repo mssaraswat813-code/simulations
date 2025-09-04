@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chemistry Pressure Simulation</title>
+<style>
+body{margin:0; background:#000; color:#0f0; font-family:monospace; overflow:hidden;}
+canvas{display:block;}
+#ui{position:absolute; top:10px; left:10px; background:rgba(0,0,0,0.7); padding:15px; border-radius:15px; border:2px solid #0f0;}
+button{display:block; margin:5px 0; padding:8px 15px; border:none; border-radius:12px; background:linear-gradient(45deg,#0f0,#00f); color:#000; font-weight:bold; cursor:pointer; box-shadow:0 0 10px #0f0,0 0 20px #00f;}
+button:hover{background:linear-gradient(45deg,#ff0,#f0f); color:#000; box-shadow:0 0 20px #ff0,0 0 30px #f0f;}
+#counters{margin-top:10px; line-height:1.5;}
+#boom{position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-size:80px; font-weight:bold; color:red; text-shadow:0 0 30px yellow,0 0 60px orange; display:none;}
+#creditText{position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-size:60px; font-weight:bold; color:#0ff; text-shadow:0 0 20px #f0f,0 0 40px #0ff; display:none; text-align:center;}
+</style>
+</head>
+<body>
+<canvas id="simCanvas"></canvas>
+<div id="ui">
+<button id="startBtn">Start</button>
+<button id="stopBtn">Stop</button>
+<button id="resetBtn">Reset</button>
+<button id="pumpBtn">Pump (Add 4)</button>
+<button id="increaseTempBtn">Increase Temp</button>
+<button id="decreaseTempBtn">Decrease Temp</button>
+<a href="index.html"><button>manu</button></a>
+<div id="counters">
+Particles: <span id="particleCount">0</span><br>
+Collected: <span id="collectedCount">0</span><br>
+Pressure: <span id="pressureVal">0</span> Pa<br>
+Temperature: <span id="temperatureVal">1</span> *C
+</div>
+</div>
+<div id="boom">BOOM!</div>
+<div id="creditText">MADE BY<br>MANISH SARASWAT</div>
+
+<script>
+const canvas=document.getElementById("simCanvas"), ctx=canvas.getContext("2d");
+canvas.width=window.innerWidth; canvas.height=window.innerHeight;
+
+const startBtn=document.getElementById("startBtn");
+const stopBtn=document.getElementById("stopBtn");
+const resetBtn=document.getElementById("resetBtn");
+const pumpBtn=document.getElementById("pumpBtn");
+const increaseTempBtn=document.getElementById("increaseTempBtn");
+const decreaseTempBtn=document.getElementById("decreaseTempBtn");
+const particleCountEl=document.getElementById("particleCount");
+const collectedCountEl=document.getElementById("collectedCount");
+const pressureValEl=document.getElementById("pressureVal");
+const temperatureValEl=document.getElementById("temperatureVal");
+const boomEl=document.getElementById("boom");
+const creditText=document.getElementById("creditText");
+
+let particles=[], collectedCount=0, running=false, temperature=1, exploded=false;
+const container={x:canvas.width/4, y:canvas.height/6, w:canvas.width/2, h:canvas.height/1.5};
+const exitValve={x:container.x+container.w-40, y:container.y+container.h/2-40, w:40, h:80, open:false};
+
+class Particle{
+constructor(x,y,vx,vy,r,color){this.x=x;this.y=y;this.vx=vx;this.vy=vy;this.r=r;this.color=color;}
+draw(){ctx.beginPath();ctx.arc(this.x,this.y,this.r,0,Math.PI*2);ctx.fillStyle=this.color;ctx.fill();}
+update(){
+  this.x+=this.vx*temperature; this.y+=this.vy*temperature;
+  if(!exploded){
+    if(this.x-this.r<container.x){this.x=container.x+this.r; this.vx*=-1;}
+    if(this.x+this.r>container.x+container.w){this.x=container.x+container.w-this.r; this.vx*=-1;}
+    if(this.y-this.r<container.y){this.y=container.y+this.r; this.vy*=-1;}
+    if(this.y+this.r>container.y+container.h){this.y=container.y+container.h-this.r; this.vy*=-1;}
+  }
+  if(exitValve.open && this.x+this.r>exitValve.x && this.y>exitValve.y && this.y<exitValve.y+exitValve.h){
+    collectedCount++; particles = particles.filter(p=>p!==this);
+  }
+}
+}
+
+function randomColor(){const colors=["#0ff","#f0f","#ff0","#0f0","#f00","#00f"]; return colors[Math.floor(Math.random()*colors.length)];}
+function pumpParticles(){for(let i=0;i<4;i++){let r=6,x=container.x+20,y=container.y+Math.random()*container.h,vx=(Math.random()*2+1),vy=(Math.random()*2-1); particles.push(new Particle(x,y,vx,vy,r,randomColor()));}}
+
+function drawContainer(){
+ctx.strokeStyle=exploded?"rgba(255,0,0,0.2)":"#0f0"; ctx.lineWidth=3; ctx.strokeRect(container.x,container.y,container.w,container.h);
+ctx.fillStyle=exitValve.open?"red":"#555"; ctx.fillRect(exitValve.x,exitValve.y,exitValve.w,exitValve.h);
+}
+
+function updateCounters(){
+  particleCountEl.textContent=particles.length;
+  collectedCountEl.textContent=collectedCount;
+  temperatureValEl.textContent=temperature.toFixed(2);
+  let avgSpeed=0;if(particles.length>0){avgSpeed=particles.reduce((sum,p)=>sum+Math.hypot(p.vx,p.vy),0)/particles.length;}
+  const area=container.w*container.h;
+  let pressure=((particles.length*avgSpeed*temperature)/area).toFixed(5);
+  pressureValEl.textContent=pressure;
+  if(!exploded && pressure>0.005){triggerExplosion();}
+}
+
+function resolveCollisions(){
+  for(let i=0;i<particles.length;i++){
+    for(let j=i+1;j<particles.length;j++){
+      let a=particles[i],b=particles[j];
+      let dx=b.x-a.x, dy=b.y-a.y, dist=Math.hypot(dx,dy);
+      if(dist<a.r+b.r){
+        let nx=dx/dist, ny=dy/dist;
+        let p=(2*(a.vx*nx + a.vy*ny - b.vx*nx - b.vy*ny))/2;
+        a.vx-=(p*nx); a.vy-=(p*ny); b.vx+=(p*nx); b.vy+=(p*ny);
+        let overlap=(a.r+b.r-dist)/2; a.x-=nx*overlap; a.y-=ny*overlap; b.x+=nx*overlap; b.y+=ny*overlap;
+      }
+    }
+  }
+}
+
+function triggerExplosion(){
+  exploded=true; boomEl.style.display="block"; document.body.style.background="darkred";
+  particles.forEach(p=>{p.vx=(Math.random()-0.5)*20; p.vy=(Math.random()-0.5)*20;});
+  setTimeout(()=>{document.body.style.background="#000";},500);
+}
+
+function animate(){
+  if(!running)return;
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  drawContainer();
+  resolveCollisions();
+  particles.forEach(p=>{p.update(); p.draw();});
+  updateCounters();
+  requestAnimationFrame(animate);
+}
+
+startBtn.onclick=()=>{
+  creditText.style.display="block";
+  setTimeout(()=>{creditText.style.display="none"; running=true; animate();},2000);
+};
+stopBtn.onclick=()=>{running=false;};
+resetBtn.onclick=()=>{
+  particles=[]; collectedCount=0; exploded=false; temperature=1;
+  boomEl.style.display="none"; creditText.style.display="none"; document.body.style.background="#000";
+  updateCounters(); ctx.clearRect(0,0,canvas.width,canvas.height); drawContainer();
+};
+pumpBtn.onclick=pumpParticles;
+increaseTempBtn.onclick=()=>{temperature+=0.2;};
+decreaseTempBtn.onclick=()=>{temperature=Math.max(0.2,temperature-0.2);};
+
+canvas.addEventListener("click",(e)=>{
+  if(e.offsetX>exitValve.x && e.offsetX<exitValve.x+exitValve.w &&
+     e.offsetY>exitValve.y && e.offsetY<exitValve.y+exitValve.h){
+       exitValve.open=!exitValve.open;
+     }
+});
+
+drawContainer();
+updateCounters();
+</script>
+</body>
+</html>

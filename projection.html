@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Projectile Motion with Horizontal Air Force</title>
+<style>
+  body { text-align: center; font-family: sans-serif; background: #f0f0f0; margin:0; padding:0; }
+  canvas { background: #222; display: block; margin: 0 auto; border: 2px solid #555; }
+  input { margin: 5px; width: 60px; }
+</style>
+</head>
+<body>
+
+<h2>Projectile Motion with Horizontal Air Force</h2>
+<div>
+  Angle (°): <input type="number" id="angle" value="45"> 
+  Speed (m/s): <input type="number" id="speed" value="50">
+  Horizontal Force (m/s²): <input type="number" id="airforce" value="0">
+  <button onclick="launch()">Launch</button>
+   <a href="index.html"><button>manu</button>
+</div>
+
+<div id="info" style="margin-top: 10px; font-weight: bold;"></div>
+
+<canvas id="canvas" width="1000" height="500"></canvas>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let projectile = null;
+const g = 9.8; // gravity m/s²
+const scale = 5; // pixels per meter
+
+function launch() {
+  const angleDeg = parseFloat(document.getElementById('angle').value);
+  const speed = parseFloat(document.getElementById('speed').value);
+  const airForce = parseFloat(document.getElementById('airforce').value);
+
+  const angleRad = angleDeg * Math.PI / 180;
+
+  projectile = {
+    x: 50,
+    y: canvas.height - 50,
+    vx: speed * Math.cos(angleRad),
+    vy: -speed * Math.sin(angleRad),
+    airForce: airForce,
+    path: [],
+    time: 0,
+    landed: false
+  };
+
+  document.getElementById('info').innerHTML = '';
+}
+
+function update(dt) {
+  if (!projectile || projectile.landed) return;
+
+  projectile.time += dt;
+
+  // Apply horizontal force
+  projectile.vx += projectile.airForce * dt;
+
+  // Apply gravity vertically
+  projectile.vy += g * dt;
+
+  // Update positions
+  projectile.x += projectile.vx * dt * scale;
+  projectile.y += projectile.vy * dt * scale;
+
+  projectile.path.push({ x: projectile.x, y: projectile.y });
+
+  // Check for ground
+  if (projectile.y >= canvas.height - 50) {
+    projectile.y = canvas.height - 50;
+    projectile.vx = 0;
+    projectile.vy = 0;
+    projectile.landed = true;
+  }
+
+  // Calculate range and max height
+  const range = (projectile.x - 50) / scale;
+  const maxHeight = Math.max(...projectile.path.map(p => canvas.height - 50 - p.y)) / scale;
+
+  document.getElementById('info').innerHTML = `
+    Time: ${projectile.time.toFixed(2)} s |
+    Range: ${range.toFixed(2)} m |
+    Max Height: ${maxHeight.toFixed(2)} m
+  `;
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (projectile) {
+    ctx.beginPath();
+    ctx.strokeStyle = 'yellow';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < projectile.path.length; i++) {
+      const p = projectile.path[i];
+      if (i === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    }
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.fillStyle = 'red';
+    ctx.arc(projectile.x, projectile.y, 8, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // Ground
+  ctx.fillStyle = 'green';
+  ctx.fillRect(0, canvas.height - 50, canvas.width, 50);
+}
+
+let lastTime = performance.now();
+function loop(time) {
+  const dt = (time - lastTime) / 1000;
+  lastTime = time;
+
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+loop(performance.now());
+</script>
+
+</body>
+</html>

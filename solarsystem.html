@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Interactive Solar System Builder</title>
+  <style>
+    :root{--bg:#0b1220;--panel:#0f1926;--accent:#ffd166;--muted:#93a1b6}
+    html,body{height:100%;margin:0;font-family:Inter, Roboto, system-ui, sans-serif;background:linear-gradient(180deg,#02030a,#071025);color:#e6eef8}
+    .app{display:flex;height:100vh;gap:12px;padding:12px;box-sizing:border-box}
+    .left{flex:1;position:relative;border-radius:12px;overflow:hidden;background:radial-gradient(ellipse at 10% 10%, rgba(255,255,255,0.02), transparent 10%)}
+    canvas{width:100%;height:100%;display:block;background:transparent}
+    .ui{width:360px;min-width:280px;background:linear-gradient(180deg,#071422, #081827);border-radius:12px;padding:14px;box-shadow:0 8px 30px rgba(2,6,23,.6)}
+    h1{font-size:16px;margin:0 0 8px;color:var(--accent)}
+    label{font-size:12px;color:var(--muted);display:block;margin-top:8px}
+    .row{display:flex;gap:8px;align-items:center}
+    button{background:#112233;border:1px solid rgba(255,255,255,0.03);color:#eaf6ff;padding:8px 10px;border-radius:8px;cursor:pointer}
+    button.important{background:linear-gradient(90deg,#ffb86b,#ffd166);color:#10222b;font-weight:700}
+    input[type=range]{width:100%}
+    .small{font-size:12px;color:var(--muted)}
+    .controls{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .help{font-size:12px;color:var(--muted);margin-top:8px}
+    .body-list{max-height:220px;overflow:auto;margin-top:8px;border-radius:8px;padding:6px;background:rgba(255,255,255,0.02)}
+    .body-item{display:flex;justify-content:space-between;padding:6px;border-bottom:1px dashed rgba(255,255,255,0.02);align-items:center}
+    .footer{position:absolute;left:12px;bottom:12px;background:rgba(0,0,0,0.3);padding:8px;border-radius:8px;font-size:12px}
+    .tag{font-size:11px;padding:4px 6px;border-radius:6px;background:rgba(255,255,255,0.03)}
+    .legend{display:flex;gap:6px;align-items:center}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="left">
+      <canvas id="space"></canvas>
+      <div class="footer">
+        <span class="tag">Click</span> place • <span class="tag">Drag</span> to give velocity • Shift+Click to add star
+      </div>
+    </div>
+
+    <div class="ui">
+      <h1>Solar System Builder</h1>
+      <div class="small">Create stars & planets, tweak mass/velocity, watch gravity do its thing. (Newtonian gravity, scaled)</div>
+
+      <!-- 🔹 Manu Button Added Here -->
+      <div style="margin-top:10px">
+        <a href="index.html"><button>Menu</button></a>
+      </div>
+
+      <div style="margin-top:10px">
+        <div class="row" style="justify-content:space-between">
+          <div class="legend"><div class="tag">G-scale</div><div class="small" id="g-value">1.0</div></div>
+          <div class="legend"><div class="tag">Time-step</div><div class="small" id="dt-value">1</div></div>
+        </div>
+        <label>Gravity constant (G) — scale physical intensity</label>
+        <input id="g" type="range" min="0.02" max="5" step="0.02" value="1">
+        <label>Simulation speed (dt):</label>
+        <input id="dt" type="range" min="0.1" max="5" step="0.1" value="1">
+      </div>
+
+      <div style="margin-top:10px">
+        <div class="controls">
+          <button id="add-planet">Add Planet</button>
+          <button id="add-star">Add Star</button>
+          <button id="playpause" class="important">Play</button>
+          <button id="clear">Clear</button>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <label style="flex:1">Mass (current tool)</label>
+          <div style="width:110px"><input id="mass" type="range" min="0.1" max="500" step="0.1" value="10"></div>
+        </div>
+        <div class="row">
+          <label style="flex:1">Radius (visual)</label>
+          <div style="width:110px"><input id="radius" type="range" min="2" max="40" step="1" value="6"></div>
+        </div>
+      </div>
+
+      <div style="margin-top:10px">
+        <label>Options</label>
+        <div class="row" style="gap:6px;margin-top:6px">
+          <label><input type="checkbox" id="trail" checked> Trails</label>
+          <label><input type="checkbox" id="merge" checked> Merge on collision</label>
+          <label><input type="checkbox" id="drawVectors"> Show velocity vectors</label>
+        </div>
+      </div>
+
+      <div style="margin-top:10px">
+        <label>Bodies</label>
+        <div class="body-list" id="body-list"></div>
+      </div>
+
+      <div class="help">HOW TO USE: Click to place a body. Drag while holding mouse to give initial velocity (arrow shows). Use Shift+Click to place a star (higher mass) quickly. Use Add buttons to switch tool. Play/Pause controls simulation.</div>
+    </div>
+  </div>
+
+<script>
+// ====== Physics Engine: simple Newtonian gravity (2D) ======
+const canvas = document.getElementById('space');
+const ctx = canvas.getContext('2d');
+let W=0,H=0; function resize(){W=canvas.width=canvas.clientWidth;H=canvas.height=canvas.clientHeight;} window.addEventListener('resize',resize);resize();
+
+// Simulation state
+let bodies = []; // {id, name, x,y,vx,vy,mass,radius,color,isStar,trail:[]}
+let running = false; let tstep = 1;
+let G = parseFloat(document.getElementById('g').value);
+let showTrails = document.getElementById('trail').checked;
+let mergeOnCollision = document.getElementById('merge').checked;
+let drawVectors = document.getElementById('drawVectors').checked;
+let nextId = 1;
+
+const colors = ['#ffd166','#06d6a0','#ef476f','#118ab2','#8338ec','#ff7b7b','#a8dadc'];
+function randColor(i){return colors[i % colors.length]}
+
+// UI bindings
+const gSlider = document.getElementById('g'); const dtSlider = document.getElementById('dt');
+const massSlider = document.getElementById('mass'); const radiusSlider = document.getElementById('radius');
+const addPlanetBtn = document.getElementById('add-planet'); const addStarBtn = document.getElementById('add-star');
+const playpauseBtn = document.getElementById('playpause'); const clearBtn = document.getElementById('clear');
+
+gSlider.oninput = ()=>{G=parseFloat(gSlider.value); document.getElementById('g-value').innerText=G.toFixed(2)}
+dtSlider.oninput = ()=>{tstep=parseFloat(dtSlider.value); document.getElementById('dt-value').innerText=tstep}
+
+document.getElementById('trail').onchange = (e)=> showTrails = e.target.checked;
+document.getElementById('merge').onchange = (e)=> mergeOnCollision = e.target.checked;
+document.getElementById('drawVectors').onchange = (e)=> drawVectors = e.target.checked;
+
+let currentTool = 'planet'; function setTool(t){currentTool=t; addPlanetBtn.classList.remove('active'); addStarBtn.classList.remove('active'); if(t==='planet') addPlanetBtn.style.outline='2px solid rgba(255,255,255,0.03)'; else addStarBtn.style.outline='2px solid rgba(255,255,255,0.03)'}
+addPlanetBtn.onclick = ()=> setTool('planet'); addStarBtn.onclick = ()=> setTool('star');
+playpauseBtn.onclick = ()=>{running=!running; playpauseBtn.innerText = running? 'Pause':'Play';}
+clearBtn.onclick = ()=>{bodies=[]; nextId=1; updateList();}
+
+// Body list UI
+function updateList(){const list = document.getElementById('body-list'); list.innerHTML=''; bodies.forEach(b=>{
+  const el = document.createElement('div'); el.className='body-item';
+  el.innerHTML = `<div><strong>${b.name}</strong> <div class="small">m=${b.mass.toFixed(1)} r=${b.radius}</div></div><div><button data-id='${b.id}'>Del</button></div>`;
+  el.querySelector('button').onclick = ()=>{bodies = bodies.filter(x=>x.id!==b.id); updateList();}
+  list.appendChild(el);
+})}
+
+// Add body helper
+function addBody(x,y,opts={mass:10,radius:6,isStar:false,vx:0,vy:0}){
+  const id = nextId++; const name = (opts.isStar? 'Star ':'Planet ')+id;
+  bodies.push({id,name,x,y,vx:opts.vx,vy:opts.vy,mass:opts.mass,radius:opts.radius,color:opts.color||randColor(id),isStar:!!opts.isStar,trail:[]});
+  updateList();
+}
+
+// Mouse handling for placement and velocity-drag
+let placing=false, startX=0, startY=0, preview=false; let tempPreview=null;
+canvas.addEventListener('pointerdown', (e)=>{
+  const rect = canvas.getBoundingClientRect();
+  const x = (e.clientX-rect.left); const y = (e.clientY-rect.top);
+  placing=true; startX=x; startY=y;
+  preview=true;
+  tempPreview = {x,y};
+});
+canvas.addEventListener('pointermove', (e)=>{
+  if(!placing) return; const rect = canvas.getBoundingClientRect(); tempPreview.x = (e.clientX-rect.left); tempPreview.y = (e.clientY-rect.top);
+});
+canvas.addEventListener('pointerup', (e)=>{
+  const rect = canvas.getBoundingClientRect(); const x=(e.clientX-rect.left), y=(e.clientY-rect.top);
+  placing=false; preview=false; tempPreview=null;
+  // compute velocity from drag vector start->end
+  const vx = (x-startX)/10; const vy = (y-startY)/10; // scale down
+  const isStar = e.shiftKey || currentTool==='star';
+  addBody(startX,startY,{mass:parseFloat(massSlider.value)*(isStar?10:1),radius:parseFloat(radiusSlider.value),isStar:isStar,vx:vx,vy:vy,color:isStar? '#ffd166':null});
+});
+
+// Physics step: compute accelerations
+function step(dt){
+  // zero accelerations
+  const ax = new Array(bodies.length).fill(0);
+  const ay = new Array(bodies.length).fill(0);
+  for(let i=0;i<bodies.length;i++){
+    for(let j=i+1;j<bodies.length;j++){
+      const A=bodies[i], B=bodies[j];
+      const dx=B.x-A.x, dy=B.y-A.y; const dist2 = dx*dx+dy*dy; const minSep = (A.radius+B.radius);
+      const dist = Math.sqrt(Math.max(dist2,0.0001));
+      // gravitational force magnitude
+      const force = G * A.mass * B.mass / (dist*dist + 1e-2);
+      const fx = force * dx / dist; const fy = force * dy / dist;
+      ax[i] += fx / A.mass; ay[i] += fy / A.mass;
+      ax[j] -= fx / B.mass; ay[j] -= fy / B.mass;
+      // collision check
+      if(dist < minSep){
+        if(mergeOnCollision){
+          // merge j into i (conserve mass & momentum)
+          const newMass = A.mass + B.mass;
+          const newVx = (A.vx*A.mass + B.vx*B.mass)/newMass;
+          const newVy = (A.vy*A.mass + B.vy*B.mass)/newMass;
+          A.mass = newMass; A.vx = newVx; A.vy = newVy; A.radius = Math.max(2, Math.cbrt(newMass)*1.8);
+          // remove B
+          bodies.splice(j,1);
+          // adjust arrays
+          return; // abort step: safe to continue next frame
+        } else {
+          // basic elastic bounce (swap some velocity)
+          const nx = dx/dist, ny=dy/dist;
+          const p = 2*(A.vx*nx + A.vy*ny - B.vx*nx - B.vy*ny)/(A.mass+B.mass);
+          A.vx = A.vx - p * B.mass * nx; A.vy = A.vy - p * B.mass * ny;
+          B.vx = B.vx + p * A.mass * nx; B.vy = B.vy + p * A.mass * ny;
+        }
+      }
+    }
+  }
+  // apply accelerations and integrate (semi-implicit Euler)
+  for(let i=0;i<bodies.length;i++){
+    bodies[i].vx += ax[i]*dt; bodies[i].vy += ay[i]*dt;
+    bodies[i].x += bodies[i].vx*dt; bodies[i].y += bodies[i].vy*dt;
+    if(showTrails){ bodies[i].trail.push({x:bodies[i].x,y:bodies[i].y}); if(bodies[i].trail.length>200) bodies[i].trail.shift(); }
+    else bodies[i].trail=[];
+  }
+}
+
+// Render
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  // background starfield
+  ctx.fillStyle='rgba(255,255,255,0.02)';
+  for(let i=0;i<60;i++){ const sx=(i*37)%W, sy=(i*71)%H; ctx.fillRect(sx,sy,1,1); }
+
+  // trails
+  if(showTrails){
+    bodies.forEach(b=>{
+      if(b.trail.length<2) return;
+      ctx.beginPath(); ctx.moveTo(b.trail[0].x,b.trail[0].y);
+      for(let i=1;i<b.trail.length;i++) ctx.lineTo(b.trail[i].x,b.trail[i].y);
+      ctx.strokeStyle = hexToRgba(b.color, 0.6); ctx.lineWidth = Math.max(1, b.radius/3); ctx.stroke();
+    });
+  }
+
+  // bodies
+  for(const b of bodies){
+    // glow for stars
+    if(b.isStar){
+      const grd = ctx.createRadialGradient(b.x,b.y,b.radius*0.1,b.x,b.y,b.radius*6);
+      grd.addColorStop(0, hexToRgba(b.color,0.9)); grd.addColorStop(1, hexToRgba(b.color,0));
+      ctx.fillStyle = grd; ctx.beginPath(); ctx.arc(b.x,b.y,b.radius*6,0,Math.PI*2); ctx.fill();
+    }
+    // planet body
+    ctx.beginPath(); ctx.fillStyle = b.color; ctx.arc(b.x,b.y,b.radius,0,Math.PI*2); ctx.fill();
+    // outline
+    ctx.lineWidth = 1; ctx.strokeStyle='rgba(255,255,255,0.06)'; ctx.stroke();
+    // velocity vector
+    if(drawVectors){ ctx.beginPath(); ctx.moveTo(b.x,b.y); ctx.lineTo(b.x+b.vx*5,b.y+b.vy*5); ctx.strokeStyle='rgba(255,255,255,0.6)'; ctx.lineWidth=1; ctx.stroke(); }
+  }
+
+  // preview velocity arrow
+  if(preview && tempPreview){
+    const sx=startX, sy=startY, ex=tempPreview.x, ey=tempPreview.y;
+    ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(ex,ey); ctx.strokeStyle='rgba(255,255,255,0.7)'; ctx.lineWidth=2; ctx.stroke();
+    // draw a small preview circle
+    ctx.beginPath(); ctx.fillStyle = (currentTool==='star'?'#ffd166':'#06d6a0'); ctx.arc(sx,sy,parseFloat(radiusSlider.value),0,Math.PI*2); ctx.fill();
+  }
+
+  // HUD text
+  ctx.fillStyle='rgba(255,255,255,0.06)'; ctx.font='12px monospace'; ctx.fillText('Bodies: '+bodies.length, 12, 18);
+}
+
+function hexToRgba(hex, a){ const c = hex.replace('#',''); const r=parseInt(c.substring(0,2),16), g=parseInt(c.substring(2,4),16), b=parseInt(c.substring(4,6),16); return 'rgba('+r+','+g+','+b+','+a+')'; }
+
+// Main loop
+let last = performance.now(); function loop(now){
+  const elapsed = (now-last)/16.6667; last=now;
+  if(running){
+    for(let i=0;i<Math.floor(elapsed);i++) step(tstep);
+  }
+  draw();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+</script>
+</body>
+</html>

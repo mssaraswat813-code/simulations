@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Electron Excitation Simulator -</title>
+<style>
+  body {
+    background-color: black;
+    color: white;
+    font-family: sans-serif;
+    text-align: center;
+    margin: 0;
+    overflow: hidden;
+  }
+  canvas {
+    display: block;
+    margin: auto;
+    background-color: #111;
+    border: 2px solid white;
+  }
+</style>
+</head>
+<body>
+<h1>Electron Excitation Simulator </h1>
+<p>5 Electrons |</p>
+<a href="index.html"> <button>manu</button>
+<canvas id="atomCanvas" width="700" height="500"></canvas>
+
+<script>
+const canvas = document.getElementById('atomCanvas');
+const ctx = canvas.getContext('2d');
+const centerX = canvas.width/2;
+const centerY = canvas.height/2;
+
+// Define 5 electrons with their orbitals and excitation energy
+let electrons = [
+    {orbital: 60, angle: 0, excited: false, excitationTime: 0, energy: 1, color: 'blue'},
+    {orbital: 100, angle: Math.PI/2, excited: false, excitationTime: 0, energy: 2, color: 'green'},
+    {orbital: 140, angle: Math.PI, excited: false, excitationTime: 0, energy: 3, color: 'orange'},
+    {orbital: 180, angle: 3*Math.PI/2, excited: false, excitationTime: 0, energy: 4, color: 'cyan'},
+    {orbital: 220, angle: Math.PI/4, excited: false, excitationTime: 0, energy: 5, color: 'magenta'},
+];
+
+// Photons array
+let photons = [];
+
+// Create photon from random position along bottom
+function createBottomPhoton(){
+    let energy = Math.floor(Math.random()*5)+1; // 1 to 5
+    let colorMap = {1:'yellow',2:'red',3:'lime',4:'orange',5:'pink'};
+    photons.push({
+        x: Math.random() * canvas.width, // random bottom x
+        y: canvas.height,
+        vx: (Math.random()-0.5)*1, // small horizontal drift
+        vy: -3 - Math.random()*2, // upward speed
+        energy: energy,
+        color: colorMap[energy],
+        type: 'incoming'
+    });
+}
+
+// Draw atom
+function drawAtom(){
+    // Draw nucleus
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, 20, 0, Math.PI*2);
+    ctx.fillStyle = 'red';
+    ctx.fill();
+
+    // Draw orbitals
+    for(let e of electrons){
+        let radius = e.orbital;
+        if(e.excited) radius += 40;
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, radius, 0, Math.PI*2);
+        ctx.strokeStyle = 'white';
+        ctx.stroke();
+    }
+
+    // Draw electrons
+    for(let e of electrons){
+        e.angle += 0.01 + 0.005*Math.random();
+        let r = e.orbital + (e.excited ? 40 : 0);
+        let ex = centerX + r * Math.cos(e.angle);
+        let ey = centerY + r * Math.sin(e.angle);
+        ctx.beginPath();
+        ctx.arc(ex, ey, 10, 0, Math.PI*2);
+        ctx.fillStyle = e.excited ? 'gold' : e.color;
+        ctx.fill();
+
+        // Handle de-excitation
+        if(e.excited){
+            e.excitationTime--;
+            if(e.excitationTime <= 0){
+                e.excited = false;
+                // Emit photon
+                photons.push({
+                    x: ex,
+                    y: ey,
+                    vx: (Math.random()-0.5)*2,
+                    vy: (Math.random()-0.5)*2,
+                    energy: e.energy,
+                    color: 'white',
+                    type: 'emitted'
+                });
+            }
+        }
+    }
+}
+
+// Animate photons
+function animatePhotons(){
+    for(let i=photons.length-1;i>=0;i--){
+        let p = photons[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 5, 0, Math.PI*2);
+        ctx.fillStyle = p.color;
+        ctx.fill();
+
+        // Check collision with electrons for excitation
+        if(p.type === 'incoming'){
+            for(let e of electrons){
+                if(!e.excited && p.energy === e.energy){
+                    let r = e.orbital;
+                    let ex = centerX + r * Math.cos(e.angle);
+                    let ey = centerY + r * Math.sin(e.angle);
+                    let dx = p.x - ex;
+                    let dy = p.y - ey;
+                    let dist = Math.sqrt(dx*dx+dy*dy);
+                    if(dist < 15){
+                        e.excited = true;
+                        e.excitationTime = 150; // frames
+                        photons.splice(i,1);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Remove photon if out of canvas
+        if(p.y <0){
+            photons.splice(i,1);
+        }
+    }
+}
+
+// Main animation loop
+function animate(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    // Random photon creation from bottom
+    if(Math.random()<0.03) createBottomPhoton();
+
+    drawAtom();
+    animatePhotons();
+    requestAnimationFrame(animate);
+}
+
+animate();
+</script>
+</body>
+</html>
